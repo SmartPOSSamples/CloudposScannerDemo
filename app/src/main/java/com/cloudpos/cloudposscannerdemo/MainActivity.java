@@ -1,13 +1,11 @@
 package com.cloudpos.cloudposscannerdemo;
 
 import android.content.Context;
-import android.content.ServiceConnection;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.os.RemoteException;
 import android.support.v7.app.AppCompatActivity;
 import android.text.method.ScrollingMovementMethod;
 import android.view.View;
@@ -16,21 +14,21 @@ import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import com.cloudpos.scanserver.aidl.IScanCallBack;
-import com.cloudpos.scanserver.aidl.IScanService;
-import com.cloudpos.scanserver.aidl.ScanParameter;
-import com.cloudpos.scanserver.aidl.ScanResult;
+import com.cloudpos.DeviceException;
+import com.cloudpos.advance.ext.POSTerminalAdvance;
+import com.cloudpos.advance.ext.scanner.IScanCallBack;
+import com.cloudpos.advance.ext.scanner.IScannerDevice;
+import com.cloudpos.advance.ext.scanner.ScanParameter;
+import com.cloudpos.advance.ext.scanner.ScanResult;
 import com.cloudpos.cloudposscannerdemo.UI.ListViewAdapter;
-import com.cloudpos.cloudposscannerdemo.control.AidlController;
-import com.cloudpos.cloudposscannerdemo.control.IAIDLListener;
 
-public class MainActivity extends AppCompatActivity implements IAIDLListener{
+public class MainActivity extends AppCompatActivity {
 
     private TextView mTv;
     private ListView mListView;
     private ImageView mImage;
     private Context mContext;
-    private IAIDLListener listener;
+    private IScannerDevice scannerDevice;
 
 
     @Override
@@ -38,10 +36,9 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mContext = this;
-        listener = this;
         initView();
         initUI();
-        AidlController.getInstance().startScanService(mContext, listener);
+        scannerDevice = POSTerminalAdvance.getInstance().getScannerDevice();
     }
 
     private void initView() {
@@ -58,33 +55,67 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 mTv.setText("");
                 mImage.setImageBitmap(null);
-                switch (position) {
-                    case 0:
-                        synchronizationScan();
-                        break;
-                    case 1:
-                        continuousScan();
-                        break;
-                    case 2:
-                        noFullScreenScan();
-                        break;
-                    case 3:
-                        returnBitmapScan();
-                        break;
-                    case 4:
-                        noBoxScan();
-                        break;
-                    case 5:
-                        scanFormat();
-                        break;
-                    case 6:
-                        customScanWindow();
-                        break;
-                }
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        switch (position) {
+                            case 0:
+                                open();
+                                break;
+                            case 1:
+                                synchronizationScan();
+                                break;
+                            case 2:
+                                continuousScan();
+                                break;
+                            case 3:
+                                noFullScreenScan();
+                                break;
+                            case 4:
+                                returnBitmapScan();
+                                break;
+                            case 5:
+                                noBoxScan();
+                                break;
+                            case 6:
+                                scanFormat();
+                                break;
+                            case 7:
+                                customScanWindow();
+                                break;
+                            case 8:
+                                close();
+                                break;
+                        }
+                    }
+                }).start();
+
             }
         });
     }
 
+    private void open() {
+        try {
+            boolean result = scannerDevice.open(mContext);
+            runOnUiThread(() -> {
+                mTv.setText("open result = " + result);
+            });
+
+        } catch (DeviceException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void close() {
+        try {
+            scannerDevice.close();
+            runOnUiThread(() -> {
+                mTv.setText("close success");
+            });
+        } catch (DeviceException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Synchronized scanning
@@ -92,13 +123,19 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
     private void synchronizationScan() {
         ScanParameter parameter = new ScanParameter();
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            mTv.setText("Result : \n" + result);
-        } catch (RemoteException e) {
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            sendResultMessage(result);
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
 
+    private void sendResultMessage(ScanResult result) {
+        Message message = new Message();
+        message.what = 0;
+        message.obj = result;
+        handler.sendMessage(message);
+    }
 
     /**
      * Continuous scanning
@@ -107,27 +144,23 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
     private void continuousScan() {
         ScanParameter parameter = new ScanParameter();
         try {
-            scanService.startScan(parameter, new IScanCallBack.Stub() {
+            scannerDevice.startScan(parameter, new IScanCallBack() {
                 @Override
-                public void foundBarcode(ScanResult result) {
-//                    Message message = new Message();
-//                    message.what = 0;
-//                    message.obj = result;
-//                    handler.sendMessage(message);
-//
-//                    try {
-//                        scanService.stopScan();
-//                    } catch (RemoteException e) {
-//                        e.printStackTrace();
-//                    }
+                public void foundBarcode(ScanResult scanResult) {
+                    sendResultMessage(scanResult);
+                    try {
+                        scannerDevice.stopScan();
+                    } catch (DeviceException e) {
+                        e.printStackTrace();
+                    }
                 }
             });
-        } catch (RemoteException e) {
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
 
-    private Handler handler = new Handler(){
+    private Handler handler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
@@ -151,9 +184,9 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         parameter.set(ScanParameter.KEY_SCAN_SECTION_WIDTH, 200);
         parameter.set(ScanParameter.KEY_SCAN_SECTION_HEIGHT, 200);
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            mTv.setText("Result : \n" + result);
-        } catch (RemoteException e) {
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            sendResultMessage(result);
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
@@ -165,11 +198,11 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         ScanParameter parameter = new ScanParameter();
         parameter.set(ScanParameter.KEY_ENABLE_RETURN_IMAGE, true);
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            Bitmap decodeBitmap = result.getDecodeBitmap();
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            Bitmap decodeBitmap = result.getBitmap();
             mImage.setImageBitmap(decodeBitmap);
 
-        } catch (RemoteException e) {
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
@@ -181,9 +214,9 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         ScanParameter parameter = new ScanParameter();
         parameter.set(ScanParameter.KEY_ENABLE_SCAN_SECTION, false);
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            mTv.setText("Result : \n" + result);
-        } catch (RemoteException e) {
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            sendResultMessage(result);
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
@@ -195,9 +228,9 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         ScanParameter parameter = new ScanParameter();
         parameter.set(ScanParameter.KEY_DECODEFORMAT, "QR, Code128");
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            mTv.setText("Result : \n" + result);
-        } catch (RemoteException e) {
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            sendResultMessage(result);
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
@@ -214,33 +247,19 @@ public class MainActivity extends AppCompatActivity implements IAIDLListener{
         parameter.set(ScanParameter.KEY_SCAN_TIP_TEXT, "WizarPOS Shanghai");
         parameter.set(ScanParameter.KEY_SCAN_TIP_TEXTCOLOR, Color.rgb(0xFF, 0x00, 0x00));
         parameter.set(ScanParameter.KEY_SCAN_TIP_TEXTMARGIN, 0);
-        parameter.set(ScanParameter.KEY_SCAN_TIP_TEXTSIZE , 25);
+        parameter.set(ScanParameter.KEY_SCAN_TIP_TEXTSIZE, 25);
         try {
-            ScanResult result = scanService.scanBarcode(parameter);
-            mTv.setText("Result : \n" + result);
-        } catch (RemoteException e) {
+            ScanResult result = scannerDevice.scanBarcode(parameter);
+            sendResultMessage(result);
+        } catch (DeviceException e) {
             e.printStackTrace();
         }
     }
 
-    private IScanService scanService; //Scanning service
-    private ServiceConnection scanConn;
-
-    @Override
-    public void serviceConnected(Object objService, ServiceConnection connection) {
-        if(objService instanceof IScanService){
-            scanService = (IScanService) objService;
-            scanConn = connection;
-        }
-    }
 
     @Override
     protected void onDestroy() {
-        if(scanService != null){
-            this.unbindService(scanConn);
-            scanService = null;
-            scanConn = null;
-        }
+        close();
         super.onDestroy();
     }
 }

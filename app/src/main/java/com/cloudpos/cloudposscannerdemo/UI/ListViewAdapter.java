@@ -23,8 +23,8 @@ public class ListViewAdapter extends BaseAdapter {
         mContext = context;
         Locale locale = context.getResources().getConfiguration().locale;
         String language = locale.getLanguage();
-        data = new String[]{"Synchronous Scan", "Asynchronous Scan", "Not full screen", "Return bitmap", "full screen",
-                    "only QR or code128", "custom window"};
+        data = new String[]{"open","Synchronous Scan", "Asynchronous Scan", "Not full screen", "Return bitmap", "full screen",
+                    "only QR or code128", "custom window","close"};
     }
 
     @Override
