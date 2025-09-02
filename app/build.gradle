@@ -2,6 +2,7 @@ apply plugin: 'com.android.application'
 
 android {
     compileSdkVersion 23
+    namespace "com.cloudpos.cloudposscannerdemo"
     defaultConfig {
         applicationId "com.cloudpos.cloudposscannerdemo"
         minSdkVersion 15
